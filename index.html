@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#111827" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Field PM Tracker</title>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="eyebrow">Preventive Maintenance</div>
+      <h1>Field PM Tracker</h1>
+    </div>
+    <button id="exportBtn" class="ghost">Export Backup</button>
+  </header>
+
+  <main class="app-shell">
+    <section id="dashboardView" class="view active">
+      <div class="hero">
+        <div>
+          <h2>Dashboard</h2>
+          <p>See what needs attention across every job site.</p>
+        </div>
+        <button id="addSiteBtn" class="primary">+ Add Site</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><span id="siteCount">0</span><small>Sites</small></div>
+        <div class="stat"><span id="equipmentCount">0</span><small>Active Equipment</small></div>
+        <div class="stat warning"><span id="dueSoonCount">0</span><small>Due Soon</small></div>
+        <div class="stat danger"><span id="overdueCount">0</span><small>Overdue</small></div>
+      </div>
+
+      <div class="section-head">
+        <h3>Job Sites</h3>
+      </div>
+      <div id="siteList" class="cards"></div>
+
+      <div class="section-head">
+        <h3>Maintenance Attention</h3>
+      </div>
+      <div id="attentionList" class="cards"></div>
+    </section>
+
+    <section id="siteView" class="view">
+      <button class="back" data-back="dashboardView">← All Sites</button>
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Job Site</div>
+          <h2 id="siteTitle"></h2>
+          <p id="siteSubtitle"></p>
+        </div>
+        <button id="addEquipmentBtn" class="primary">+ Add Equipment</button>
+      </div>
+      <div id="equipmentList" class="cards"></div>
+    </section>
+
+    <section id="equipmentView" class="view">
+      <button class="back" data-back="siteView">← Equipment List</button>
+      <div class="hero">
+        <div>
+          <div class="eyebrow">Machine Profile</div>
+          <h2 id="equipmentTitle"></h2>
+          <p id="equipmentSubtitle"></p>
+        </div>
+        <button id="editEquipmentBtn" class="primary">Edit Machine</button>
+      </div>
+
+      <div id="equipmentStatusBanner"></div>
+
+      <div class="two-col">
+        <div class="panel">
+          <h3>Current Details</h3>
+          <div id="equipmentDetails" class="detail-grid"></div>
+        </div>
+
+        <div class="panel">
+          <h3>Update Hours</h3>
+          <form id="hoursForm" class="stack">
+            <label>Current engine hours
+              <input id="hoursInput" type="number" step="0.1" min="0" required />
+            </label>
+            <button class="primary" type="submit">Save Hours</button>
+          </form>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="section-head inline">
+          <h3>Maintenance Schedule</h3>
+          <button id="addMaintenanceBtn" class="ghost">+ Add Interval</button>
+        </div>
+        <div id="maintenanceList"></div>
+      </div>
+
+      <div class="panel">
+        <div class="section-head inline">
+          <h3>Service History</h3>
+          <button id="logServiceBtn" class="ghost">+ Log Service</button>
+        </div>
+        <div id="serviceHistory"></div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="siteDialog">
+    <form method="dialog" id="siteForm" class="dialog-form">
+      <h3>Add Job Site</h3>
+      <label>Site name
+        <input id="siteName" required placeholder="e.g. Cherry Creek" />
+      </label>
+      <label>Notes
+        <textarea id="siteNotes" placeholder="Optional"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" class="ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button id="saveSiteBtn" value="default" class="primary">Save Site</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="equipmentDialog">
+    <form method="dialog" id="equipmentForm" class="dialog-form">
+      <h3 id="equipmentDialogTitle">Add Equipment</h3>
+      <input id="equipmentId" type="hidden" />
+      <div class="grid2">
+        <label>Unit number
+          <input id="unitNumber" required placeholder="e.g. RIG-03" />
+        </label>
+        <label>Make / model
+          <input id="makeModel" required placeholder="e.g. Schramm T685" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Serial number
+          <input id="serialNumber" />
+        </label>
+        <label>Status
+          <select id="equipmentStatus">
+            <option>Active</option>
+            <option>Rental</option>
+            <option>Out of Service</option>
+            <option>Archived</option>
+          </select>
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Rental / owner
+          <input id="owner" />
+        </label>
+        <label>Current engine hours
+          <input id="currentHours" type="number" min="0" step="0.1" value="0" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Oil type
+          <input id="oilType" placeholder="e.g. 15W-40" />
+        </label>
+        <label>Oil capacity
+          <input id="oilCapacity" placeholder="e.g. 28 L" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Oil filter
+          <input id="oilFilter" />
+        </label>
+        <label>Fuel filter
+          <input id="fuelFilter" />
+        </label>
+      </div>
+      <div class="grid2">
+        <label>Air filter
+          <input id="airFilter" />
+        </label>
+        <label>Hydraulic filter
+          <input id="hydraulicFilter" />
+        </label>
+      </div>
+      <label>Notes
+        <textarea id="equipmentNotes"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" class="ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button id="saveEquipmentBtn" value="default" class="primary">Save Machine</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="maintenanceDialog">
+    <form method="dialog" id="maintenanceForm" class="dialog-form">
+      <h3>Add Maintenance Interval</h3>
+      <label>Service name
+        <input id="maintenanceName" required placeholder="e.g. Engine oil & filter" />
+      </label>
+      <div class="grid2">
+        <label>Interval (hours)
+          <input id="maintenanceInterval" type="number" min="1" step="1" required value="250" />
+        </label>
+        <label>Last serviced at (hours)
+          <input id="maintenanceLastHours" type="number" min="0" step="0.1" required />
+        </label>
+      </div>
+      <label>Warning threshold (hours before due)
+        <input id="maintenanceWarning" type="number" min="0" step="1" value="50" />
+      </label>
+      <div class="actions">
+        <button type="button" class="ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button id="saveMaintenanceBtn" value="default" class="primary">Save Interval</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="serviceDialog">
+    <form method="dialog" id="serviceForm" class="dialog-form">
+      <h3>Log Completed Service</h3>
+      <label>Maintenance item
+        <select id="serviceMaintenanceId"></select>
+      </label>
+      <div class="grid2">
+        <label>Service hours
+          <input id="serviceHours" type="number" min="0" step="0.1" required />
+        </label>
+        <label>Date
+          <input id="serviceDate" type="date" required />
+        </label>
+      </div>
+      <label>Notes / parts used
+        <textarea id="serviceNotes" placeholder="What was done? Any issues found?"></textarea>
+      </label>
+      <div class="actions">
+        <button type="button" class="ghost" onclick="this.closest('dialog').close()">Cancel</button>
+        <button id="saveServiceBtn" value="default" class="primary">Save Service</button>
+      </div>
+    </form>
+  </dialog>
+
+  <input id="importInput" type="file" accept="application/json" hidden />
+  <footer>
+    <button id="importBtn" class="ghost">Import Backup</button>
+    <span>Prototype stores data on this device only.</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
