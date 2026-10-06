@@ -21,3 +21,4 @@ To run on a computer:
 2. Serve the folder with a basic local web server.
 
 For iPhone home-screen installation and offline caching, host the folder on an HTTPS web host.
+Deployment retry
