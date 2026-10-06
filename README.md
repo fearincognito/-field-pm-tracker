@@ -1,24 +1,18 @@
-# Field PM Tracker Prototype
+# Forged Field PM Tracker — Version 2
 
-This is a static mobile-friendly prototype for tracking preventive maintenance by job site.
+Mobile-first preventive maintenance prototype. Data remains stored locally in the browser (localStorage) and is compatible with the Version 1 storage key so existing data can migrate forward.
 
-## Included
-- Add job sites
-- Add/edit/archive/rental/out-of-service equipment
-- Store unit, serial, owner, hours, oil/filter information, notes
-- Add hour-based maintenance intervals
-- Due soon / overdue calculations
-- Log completed service
-- Export/import JSON backups
-- Installable PWA structure when hosted over HTTPS
+## V2 highlights
+- Clickable dashboard drill-downs for Sites, Active Equipment, Due Soon and Overdue
+- 50-hour yellow / 20-hour orange / overdue red maintenance status
+- Estimated service dates using 12/24 operating hours per day plus 14/7 or 20/10 site rotations
+- Master service history with late-service highlighting
+- Site inventory and site/equipment pack lists
+- Engine serial number, VIN, ownership dropdown, fuel/water separator
+- Google Maps site links, access notes, coordinates and multi-site overview map
+- Light / Dark / Auto appearance
+- Site archiving
+- Forged-inspired industrial styling
 
 ## Important
-This prototype stores data in the browser's localStorage on one device.
-It does not yet include cloud accounts, team logins, email reminders, or cross-device sync.
-
-To run on a computer:
-1. Open `index.html` directly, or
-2. Serve the folder with a basic local web server.
-
-For iPhone home-screen installation and offline caching, host the folder on an HTTPS web host.
-Deployment retry
+This is still a local-data prototype. Use Settings > Export Backup before clearing browser/site data.

@@ -1,9 +1,1 @@
-{
-  "name": "Field PM Tracker",
-  "short_name": "PM Tracker",
-  "start_url": "./index.html",
-  "display": "standalone",
-  "background_color": "#f3f4f6",
-  "theme_color": "#111827",
-  "icons": []
-}
+{"name":"Forged Field PM Tracker","short_name":"PM Tracker","start_url":"./","display":"standalone","background_color":"#07111b","theme_color":"#0b1f33","description":"Field preventive maintenance tracker for drilling equipment"}

@@ -1,359 +1,39 @@
-
-const STORAGE_KEY = "fieldPmTracker_v1";
-
-const seed = {
-  sites: [
-    {
-      id: crypto.randomUUID(),
-      name: "Demo Nevada Site",
-      notes: "Replace this with one of your real job sites.",
-      equipment: []
-    }
-  ]
-};
-
-let state = loadState();
-let currentSiteId = null;
-let currentEquipmentId = null;
-
-function loadState() {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : seed;
-  } catch {
-    return seed;
-  }
-}
-function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  renderAll();
-}
-function siteById(id) { return state.sites.find(s => s.id === id); }
-function equipmentById(site, id) { return site?.equipment.find(e => e.id === id); }
-
-function maintState(eq, m) {
-  const dueAt = Number(m.lastHours) + Number(m.interval);
-  const remaining = dueAt - Number(eq.currentHours || 0);
-  if (remaining < 0) return {kind:"overdue", label:`Overdue by ${Math.abs(remaining).toFixed(1)} h`, dueAt, remaining};
-  if (remaining <= Number(m.warning || 0)) return {kind:"warn", label:`Due in ${remaining.toFixed(1)} h`, dueAt, remaining};
-  return {kind:"ok", label:`Due in ${remaining.toFixed(1)} h`, dueAt, remaining};
-}
-function equipmentHealth(eq) {
-  if (["Archived","Out of Service"].includes(eq.status)) return {kind:"out", label:eq.status};
-  const rows = (eq.maintenance || []).map(m => maintState(eq,m));
-  if (rows.some(r => r.kind === "overdue")) return {kind:"overdue", label:"Maintenance overdue"};
-  if (rows.some(r => r.kind === "warn")) return {kind:"warn", label:"Maintenance due soon"};
-  return {kind:"ok", label: rows.length ? "Maintenance current" : "No intervals set"};
-}
-
-function showView(id) {
-  document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
-  document.getElementById(id).classList.add("active");
-  window.scrollTo({top:0, behavior:"smooth"});
-}
-function escapeHtml(v="") {
-  return String(v).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[ch]));
-}
-
-function renderDashboard() {
-  const activeEquipment = state.sites.flatMap(s => s.equipment || []).filter(e => e.status !== "Archived");
-  let dueSoon=0, overdue=0;
-  const attention = [];
-  state.sites.forEach(site => {
-    (site.equipment || []).forEach(eq => {
-      const health = equipmentHealth(eq);
-      if (health.kind === "warn") dueSoon++;
-      if (health.kind === "overdue") overdue++;
-      if (["warn","overdue"].includes(health.kind)) attention.push({site,eq,health});
-    });
-  });
-
-  document.getElementById("siteCount").textContent = state.sites.length;
-  document.getElementById("equipmentCount").textContent = activeEquipment.length;
-  document.getElementById("dueSoonCount").textContent = dueSoon;
-  document.getElementById("overdueCount").textContent = overdue;
-
-  const siteList = document.getElementById("siteList");
-  siteList.innerHTML = state.sites.length ? state.sites.map(site => {
-    const active = (site.equipment || []).filter(e => e.status !== "Archived").length;
-    const attn = (site.equipment || []).filter(e => ["warn","overdue"].includes(equipmentHealth(e).kind)).length;
-    return `<div class="card clickable" data-site-id="${site.id}">
-      <div>
-        <div class="card-title">${escapeHtml(site.name)}</div>
-        <div class="card-sub">${active} active equipment${site.notes ? " · " + escapeHtml(site.notes) : ""}</div>
-      </div>
-      <div>${attn ? `<span class="badge warn">${attn} need attention</span>` : `<span class="badge ok">All clear</span>`}</div>
-    </div>`;
-  }).join("") : `<div class="empty">No job sites yet. Add your first site.</div>`;
-
-  siteList.querySelectorAll("[data-site-id]").forEach(el => el.addEventListener("click", () => {
-    currentSiteId = el.dataset.siteId;
-    renderSite();
-    showView("siteView");
-  }));
-
-  const attentionList = document.getElementById("attentionList");
-  attentionList.innerHTML = attention.length ? attention.map(({site,eq,health}) => `
-    <div class="card clickable" data-site="${site.id}" data-eq="${eq.id}">
-      <div>
-        <div class="card-title">${escapeHtml(eq.unitNumber)} · ${escapeHtml(eq.makeModel)}</div>
-        <div class="card-sub">${escapeHtml(site.name)} · ${Number(eq.currentHours||0).toFixed(1)} h</div>
-      </div>
-      <span class="badge ${health.kind}">${health.label}</span>
-    </div>`).join("") : `<div class="empty">Nothing is due soon or overdue.</div>`;
-
-  attentionList.querySelectorAll("[data-eq]").forEach(el => el.addEventListener("click", () => {
-    currentSiteId = el.dataset.site;
-    currentEquipmentId = el.dataset.eq;
-    renderEquipment();
-    showView("equipmentView");
-  }));
-}
-
-function renderSite() {
-  const site = siteById(currentSiteId);
-  if (!site) return;
-  document.getElementById("siteTitle").textContent = site.name;
-  document.getElementById("siteSubtitle").textContent = site.notes || "Equipment assigned to this site.";
-  const list = document.getElementById("equipmentList");
-  const equipment = site.equipment || [];
-  list.innerHTML = equipment.length ? equipment.map(eq => {
-    const health = equipmentHealth(eq);
-    return `<div class="card clickable" data-equipment-id="${eq.id}">
-      <div>
-        <div class="card-title">${escapeHtml(eq.unitNumber)} · ${escapeHtml(eq.makeModel)}</div>
-        <div class="card-sub">${Number(eq.currentHours||0).toFixed(1)} engine h · ${escapeHtml(eq.status)}</div>
-      </div>
-      <span class="badge ${health.kind}">${health.label}</span>
-    </div>`;
-  }).join("") : `<div class="empty">No equipment at this site yet.</div>`;
-
-  list.querySelectorAll("[data-equipment-id]").forEach(el => el.addEventListener("click", () => {
-    currentEquipmentId = el.dataset.equipmentId;
-    renderEquipment();
-    showView("equipmentView");
-  }));
-}
-
-function renderEquipment() {
-  const site = siteById(currentSiteId);
-  const eq = equipmentById(site, currentEquipmentId);
-  if (!eq) return;
-  const health = equipmentHealth(eq);
-  document.getElementById("equipmentTitle").textContent = `${eq.unitNumber} · ${eq.makeModel}`;
-  document.getElementById("equipmentSubtitle").textContent = `${site.name} · ${eq.status}`;
-  document.getElementById("hoursInput").value = Number(eq.currentHours || 0);
-  document.getElementById("equipmentStatusBanner").innerHTML = `<div class="status-banner ${health.kind}">${health.label}</div>`;
-
-  const details = [
-    ["Serial number", eq.serialNumber],
-    ["Owner / rental", eq.owner],
-    ["Engine hours", `${Number(eq.currentHours||0).toFixed(1)} h`],
-    ["Oil type", eq.oilType],
-    ["Oil capacity", eq.oilCapacity],
-    ["Oil filter", eq.oilFilter],
-    ["Fuel filter", eq.fuelFilter],
-    ["Air filter", eq.airFilter],
-    ["Hydraulic filter", eq.hydraulicFilter],
-    ["Notes", eq.notes]
-  ];
-  document.getElementById("equipmentDetails").innerHTML = details.map(([k,v]) =>
-    `<div class="detail"><small>${k}</small><strong>${escapeHtml(v || "—")}</strong></div>`
-  ).join("");
-
-  const mList = document.getElementById("maintenanceList");
-  const maintenance = eq.maintenance || [];
-  mList.innerHTML = maintenance.length ? maintenance.map(m => {
-    const st = maintState(eq,m);
-    return `<div class="maintenance-row">
-      <div>
-        <strong>${escapeHtml(m.name)}</strong>
-        <div class="card-sub">Every ${m.interval} h · Last at ${Number(m.lastHours).toFixed(1)} h · Next at ${st.dueAt.toFixed(1)} h</div>
-      </div>
-      <span class="badge ${st.kind}">${st.label}</span>
-    </div>`;
-  }).join("") : `<div class="empty">No maintenance intervals yet.</div>`;
-
-  const history = [...(eq.history || [])].sort((a,b) => new Date(b.date)-new Date(a.date));
-  document.getElementById("serviceHistory").innerHTML = history.length ? history.map(h => `
-    <div class="history-row">
-      <div>
-        <strong>${escapeHtml(h.name)}</strong>
-        <div class="card-sub">${escapeHtml(h.date)} · ${Number(h.hours).toFixed(1)} h${h.notes ? " · " + escapeHtml(h.notes) : ""}</div>
-      </div>
-    </div>`).join("") : `<div class="empty">No completed service logged yet.</div>`;
-}
-
-function renderAll() {
-  renderDashboard();
-  if (currentSiteId) renderSite();
-  if (currentSiteId && currentEquipmentId) renderEquipment();
-}
-
-document.getElementById("addSiteBtn").addEventListener("click", () => {
-  document.getElementById("siteForm").reset();
-  document.getElementById("siteDialog").showModal();
-});
-document.getElementById("siteForm").addEventListener("submit", e => {
-  e.preventDefault();
-  state.sites.push({
-    id: crypto.randomUUID(),
-    name: document.getElementById("siteName").value.trim(),
-    notes: document.getElementById("siteNotes").value.trim(),
-    equipment: []
-  });
-  saveState();
-  document.getElementById("siteDialog").close();
-});
-
-document.getElementById("addEquipmentBtn").addEventListener("click", () => openEquipmentDialog());
-document.getElementById("editEquipmentBtn").addEventListener("click", () => openEquipmentDialog(true));
-
-function openEquipmentDialog(edit=false) {
-  const form = document.getElementById("equipmentForm");
-  form.reset();
-  document.getElementById("equipmentDialogTitle").textContent = edit ? "Edit Equipment" : "Add Equipment";
-  let eq = null;
-  if (edit) eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  document.getElementById("equipmentId").value = eq?.id || "";
-  const fields = ["unitNumber","makeModel","serialNumber","equipmentStatus","owner","currentHours","oilType","oilCapacity","oilFilter","fuelFilter","airFilter","hydraulicFilter","equipmentNotes"];
-  const map = {
-    unitNumber:"unitNumber", makeModel:"makeModel", serialNumber:"serialNumber", equipmentStatus:"status",
-    owner:"owner", currentHours:"currentHours", oilType:"oilType", oilCapacity:"oilCapacity",
-    oilFilter:"oilFilter", fuelFilter:"fuelFilter", airFilter:"airFilter", hydraulicFilter:"hydraulicFilter", equipmentNotes:"notes"
-  };
-  fields.forEach(id => {
-    const el = document.getElementById(id);
-    if (eq) el.value = eq[map[id]] ?? (id==="equipmentStatus" ? "Active" : "");
-    else if (id==="equipmentStatus") el.value = "Active";
-    else if (id==="currentHours") el.value = 0;
-  });
-  document.getElementById("equipmentDialog").showModal();
-}
-document.getElementById("equipmentForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const site = siteById(currentSiteId);
-  const id = document.getElementById("equipmentId").value;
-  const existing = id ? equipmentById(site,id) : null;
-  const obj = {
-    id: id || crypto.randomUUID(),
-    unitNumber: document.getElementById("unitNumber").value.trim(),
-    makeModel: document.getElementById("makeModel").value.trim(),
-    serialNumber: document.getElementById("serialNumber").value.trim(),
-    status: document.getElementById("equipmentStatus").value,
-    owner: document.getElementById("owner").value.trim(),
-    currentHours: Number(document.getElementById("currentHours").value || 0),
-    oilType: document.getElementById("oilType").value.trim(),
-    oilCapacity: document.getElementById("oilCapacity").value.trim(),
-    oilFilter: document.getElementById("oilFilter").value.trim(),
-    fuelFilter: document.getElementById("fuelFilter").value.trim(),
-    airFilter: document.getElementById("airFilter").value.trim(),
-    hydraulicFilter: document.getElementById("hydraulicFilter").value.trim(),
-    notes: document.getElementById("equipmentNotes").value.trim(),
-    maintenance: existing?.maintenance || [],
-    history: existing?.history || []
-  };
-  if (existing) Object.assign(existing,obj); else site.equipment.push(obj);
-  currentEquipmentId = obj.id;
-  saveState();
-  document.getElementById("equipmentDialog").close();
-  renderEquipment();
-  showView("equipmentView");
-});
-
-document.getElementById("hoursForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  eq.currentHours = Number(document.getElementById("hoursInput").value || 0);
-  saveState();
-});
-
-document.getElementById("addMaintenanceBtn").addEventListener("click", () => {
-  const eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  document.getElementById("maintenanceForm").reset();
-  document.getElementById("maintenanceInterval").value = 250;
-  document.getElementById("maintenanceWarning").value = 50;
-  document.getElementById("maintenanceLastHours").value = Number(eq.currentHours || 0);
-  document.getElementById("maintenanceDialog").showModal();
-});
-document.getElementById("maintenanceForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  eq.maintenance = eq.maintenance || [];
-  eq.maintenance.push({
-    id: crypto.randomUUID(),
-    name: document.getElementById("maintenanceName").value.trim(),
-    interval: Number(document.getElementById("maintenanceInterval").value),
-    lastHours: Number(document.getElementById("maintenanceLastHours").value),
-    warning: Number(document.getElementById("maintenanceWarning").value || 0)
-  });
-  saveState();
-  document.getElementById("maintenanceDialog").close();
-});
-
-document.getElementById("logServiceBtn").addEventListener("click", () => {
-  const eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  const select = document.getElementById("serviceMaintenanceId");
-  select.innerHTML = (eq.maintenance || []).map(m => `<option value="${m.id}">${escapeHtml(m.name)}</option>`).join("");
-  if (!select.options.length) {
-    alert("Add a maintenance interval first.");
-    return;
-  }
-  document.getElementById("serviceHours").value = Number(eq.currentHours || 0);
-  document.getElementById("serviceDate").value = new Date().toISOString().slice(0,10);
-  document.getElementById("serviceNotes").value = "";
-  document.getElementById("serviceDialog").showModal();
-});
-document.getElementById("serviceForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const eq = equipmentById(siteById(currentSiteId), currentEquipmentId);
-  const m = (eq.maintenance || []).find(x => x.id === document.getElementById("serviceMaintenanceId").value);
-  const hours = Number(document.getElementById("serviceHours").value);
-  const date = document.getElementById("serviceDate").value;
-  const notes = document.getElementById("serviceNotes").value.trim();
-  if (m) m.lastHours = hours;
-  eq.history = eq.history || [];
-  eq.history.push({id:crypto.randomUUID(), maintenanceId:m?.id, name:m?.name || "Service", hours, date, notes});
-  if (hours > Number(eq.currentHours||0)) eq.currentHours = hours;
-  saveState();
-  document.getElementById("serviceDialog").close();
-});
-
-document.querySelectorAll("[data-back]").forEach(btn => btn.addEventListener("click", () => {
-  const target = btn.dataset.back;
-  if (target === "siteView") renderSite();
-  if (target === "dashboardView") renderDashboard();
-  showView(target);
-}));
-
-document.getElementById("exportBtn").addEventListener("click", exportBackup);
-function exportBackup() {
-  const blob = new Blob([JSON.stringify(state,null,2)], {type:"application/json"});
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = `field-pm-backup-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-document.getElementById("importBtn").addEventListener("click", () => document.getElementById("importInput").click());
-document.getElementById("importInput").addEventListener("change", async e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  try {
-    const data = JSON.parse(await file.text());
-    if (!Array.isArray(data.sites)) throw new Error("Invalid backup");
-    state = data;
-    currentSiteId = null;
-    currentEquipmentId = null;
-    saveState();
-    showView("dashboardView");
-  } catch {
-    alert("That backup file could not be imported.");
-  }
-});
-
-if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
-  navigator.serviceWorker.register("./sw.js").catch(()=>{});
-}
-
-renderAll();
+const STORAGE_KEY="fieldPmTracker_v1"; const PREF_KEY="fieldPmTrackerPrefs_v2";
+const seed={sites:[{id:crypto.randomUUID(),name:"Demo Nevada Site",notes:"Replace this with one of your real job sites.",equipment:[],inventory:[],rotation:"none",cycleStart:"",mapsLink:"",lat:"",lng:"",accessNotes:""}]};
+let state=loadState(),currentSiteId=null,currentEquipmentId=null,packBackTarget="dashboardView";
+function loadState(){try{const s=JSON.parse(localStorage.getItem(STORAGE_KEY));return migrate(s&&Array.isArray(s.sites)?s:seed)}catch{return migrate(seed)}}
+function migrate(s){s.sites.forEach(site=>{site.equipment=site.equipment||[];site.inventory=site.inventory||[];site.rotation=site.rotation||"none";site.cycleStart=site.cycleStart||"";site.mapsLink=site.mapsLink||"";site.lat=site.lat??"";site.lng=site.lng??"";site.accessNotes=site.accessNotes||"";site.archived=!!site.archived;site.equipment.forEach(eq=>{eq.ownership=eq.ownership||((eq.owner||"").toLowerCase().includes("rent")?"Rental":"Owned");eq.dailyHours=Number(eq.dailyHours||12);eq.engineSerialNumber=eq.engineSerialNumber||"";eq.vin=eq.vin||"N/A";eq.fuelWaterSeparator=eq.fuelWaterSeparator||"";eq.maintenance=eq.maintenance||[];eq.history=eq.history||[]})});return s}
+function saveState(){localStorage.setItem(STORAGE_KEY,JSON.stringify(state));renderAll()}
+const siteById=id=>state.sites.find(s=>s.id===id),equipmentById=(s,id)=>s?.equipment.find(e=>e.id===id),esc=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]));
+function maintState(eq,m){const dueAt=Number(m.lastHours)+Number(m.interval),remaining=dueAt-Number(eq.currentHours||0);if(remaining<0)return{kind:"overdue",label:`Overdue by ${Math.abs(remaining).toFixed(1)} h`,dueAt,remaining};if(remaining<=20)return{kind:"urgent",label:`Urgent · ${remaining.toFixed(1)} h left`,dueAt,remaining};if(remaining<=50)return{kind:"warn",label:`Due in ${remaining.toFixed(1)} h`,dueAt,remaining};return{kind:"ok",label:`Due in ${remaining.toFixed(1)} h`,dueAt,remaining}}
+function equipmentHealth(eq){if(["Archived","Out of Service"].includes(eq.status))return{kind:"out",label:eq.status};const r=eq.maintenance.map(m=>maintState(eq,m));if(r.some(x=>x.kind==="overdue"))return{kind:"overdue",label:"Maintenance overdue"};if(r.some(x=>x.kind==="urgent"))return{kind:"urgent",label:"Maintenance urgent"};if(r.some(x=>x.kind==="warn"))return{kind:"warn",label:"Maintenance due soon"};return{kind:"ok",label:r.length?"Maintenance current":"No intervals set"}}
+function showView(id){document.querySelectorAll(".view").forEach(v=>v.classList.remove("active"));document.getElementById(id).classList.add("active");scrollTo({top:0,behavior:"smooth"})}
+function activeSites(){return state.sites.filter(s=>!s.archived)}
+function allMaintRows(filterKinds=[]){const rows=[];activeSites().forEach(site=>site.equipment.filter(e=>e.status!=="Archived").forEach(eq=>eq.maintenance.forEach(m=>{const st=maintState(eq,m);if(!filterKinds.length||filterKinds.includes(st.kind))rows.push({site,eq,m,st})})));return rows.sort((a,b)=>a.st.remaining-b.st.remaining)}
+function renderDashboard(){const sites=activeSites(),eqs=sites.flatMap(s=>s.equipment).filter(e=>e.status!=="Archived"),due=allMaintRows(["warn","urgent"]),over=allMaintRows(["overdue"]);siteCount.textContent=sites.length;equipmentCount.textContent=eqs.length;dueSoonCount.textContent=due.length;overdueCount.textContent=over.length;siteList.innerHTML=sites.length?sites.map(site=>{const eq=site.equipment.filter(e=>e.status!=="Archived"),att=eq.filter(e=>["warn","urgent","overdue"].includes(equipmentHealth(e).kind)).length;return`<div class="card clickable" data-site-id="${site.id}"><div><div class="card-title">${esc(site.name)}</div><div class="card-sub">${eq.length} active equipment${site.rotation!=="none"?` · ${site.rotation} rotation`:""}</div></div>${att?`<span class="badge warn">${att} need attention</span>`:`<span class="badge ok">All clear</span>`}</div>`}).join(""):`<div class="empty">No job sites yet.</div>`;bindSiteCards(siteList);const attention=[...due,...over].slice(0,12);attentionList.innerHTML=attention.length?attention.map(r=>maintCard(r)).join(""):`<div class="empty">Nothing is due soon or overdue.</div>`;bindMaintCards(attentionList)}
+function maintCard({site,eq,m,st}){return`<div class="card clickable" data-site="${site.id}" data-eq="${eq.id}"><div><div class="card-title">${esc(eq.unitNumber)} · ${esc(m.name)}</div><div class="card-sub">${esc(site.name)} · ${Number(eq.currentHours||0).toFixed(1)} h${forecastText(site,eq,st.remaining,true)}</div></div><span class="badge ${st.kind}">${st.label}</span></div>`}
+function bindSiteCards(root){root.querySelectorAll("[data-site-id]").forEach(el=>el.onclick=()=>{currentSiteId=el.dataset.siteId;renderSite();showView("siteView")})}function bindMaintCards(root){root.querySelectorAll("[data-eq]").forEach(el=>el.onclick=()=>{currentSiteId=el.dataset.site;currentEquipmentId=el.dataset.eq;renderEquipment();showView("equipmentView")})}
+function renderDrill(type){siteMapPanel.classList.add("hidden");if(type==="sites"){listTitle.textContent="Job Sites";listSubtitle.textContent="All active sites.";drillList.innerHTML=activeSites().map(s=>`<div class="card clickable" data-site-id="${s.id}"><div><div class="card-title">${esc(s.name)}</div><div class="card-sub">${s.equipment.filter(e=>e.status!=="Archived").length} active equipment</div></div></div>`).join("")||`<div class="empty">No sites.</div>`;bindSiteCards(drillList);renderSiteMap();siteMapPanel.classList.remove("hidden")}else if(type==="equipment"){listTitle.textContent="Active Equipment";listSubtitle.textContent="All active machines across all sites.";drillList.innerHTML=activeSites().flatMap(s=>s.equipment.filter(e=>e.status!=="Archived").map(eq=>`<div class="card clickable" data-site="${s.id}" data-eq="${eq.id}"><div><div class="card-title">${esc(eq.unitNumber)} · ${esc(eq.makeModel)}</div><div class="card-sub">${esc(s.name)} · ${Number(eq.currentHours||0).toFixed(1)} h</div></div><span class="badge ${equipmentHealth(eq).kind}">${equipmentHealth(eq).label}</span></div>`)).join("")||`<div class="empty">No equipment.</div>`;bindMaintCards(drillList)}else{const rows=allMaintRows(type==="overdue"?["overdue"]:["warn","urgent"]);listTitle.textContent=type==="overdue"?"Overdue Services":"Due Soon";listSubtitle.textContent=type==="overdue"?"Services already past their scheduled engine hours.":"Services within 50 engine hours of due.";drillList.innerHTML=rows.map(maintCard).join("")||`<div class="empty">Nothing here.</div>`;bindMaintCards(drillList)}showView("listView")}
+function renderSiteMap(){const pts=activeSites().filter(s=>Number.isFinite(Number(s.lat))&&Number.isFinite(Number(s.lng))&&s.lat!==""&&s.lng!=="");siteMap.innerHTML=pts.length?pts.map(s=>{const x=Math.max(5,Math.min(95,(Number(s.lng)+120.1)/6.2*100)),y=Math.max(7,Math.min(93,(42.1-Number(s.lat))/7.2*100));return`<button class="map-pin" title="${esc(s.name)}" data-site-id="${s.id}" style="left:${x}%;top:${y}%"><span>●</span></button>`}).join(""):`<div class="empty" style="position:absolute;inset:30% 10%;z-index:2">Add latitude/longitude to your sites to place pins on this overview.</div>`;bindSiteCards(siteMap)}
+function renderSite(){const s=siteById(currentSiteId);if(!s)return;siteTitle.textContent=s.name;siteSubtitle.textContent=s.notes||"Equipment assigned to this site.";siteInfo.innerHTML=`<div class="detail-grid"><div class="detail"><small>Operating rotation</small><strong>${s.rotation==="none"?"Continuous / not set":esc(s.rotation+" on/off")}</strong></div><div class="detail"><small>Current cycle start</small><strong>${esc(s.cycleStart||"—")}</strong></div><div class="detail"><small>Coordinates</small><strong>${s.lat&&s.lng?`${esc(s.lat)}, ${esc(s.lng)}`:"—"}</strong></div><div class="detail"><small>Site access</small><strong>${esc(s.accessNotes||"—")}</strong></div></div>`;navigateBtn.disabled=!s.mapsLink;navigateBtn.title=s.mapsLink?"Open saved Google Maps link":"Add a Google Maps link in Edit Site";equipmentList.innerHTML=s.equipment.filter(e=>e.status!=="Archived").map(eq=>`<div class="card clickable" data-equipment-id="${eq.id}"><div><div class="card-title">${esc(eq.unitNumber)} · ${esc(eq.makeModel)}</div><div class="card-sub">${Number(eq.currentHours||0).toFixed(1)} engine h · ${esc(eq.ownership)} · ${eq.dailyHours} h/day</div></div><span class="badge ${equipmentHealth(eq).kind}">${equipmentHealth(eq).label}</span></div>`).join("")||`<div class="empty">No equipment at this site yet.</div>`;equipmentList.querySelectorAll("[data-equipment-id]").forEach(el=>el.onclick=()=>{currentEquipmentId=el.dataset.equipmentId;renderEquipment();showView("equipmentView")})}
+function forecastDate(site,eq,remaining){if(remaining<=0)return null;let hours=remaining,d=new Date();d.setHours(12,0,0,0);for(let i=0;i<730;i++){if(isOperatingDay(site,d))hours-=Number(eq.dailyHours||12);if(hours<=0)return d;d.setDate(d.getDate()+1)}return null}
+function isOperatingDay(site,date){if(!site.rotation||site.rotation==="none"||!site.cycleStart)return true;const [on,off]=site.rotation.split("/").map(Number),start=new Date(site.cycleStart+"T12:00:00"),diff=Math.floor((date-start)/86400000),cycle=on+off,pos=((diff%cycle)+cycle)%cycle;return pos<on}
+function forecastText(site,eq,remaining,inline=false){const d=forecastDate(site,eq,remaining);return d?`${inline?" · ":""}Est. ${d.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}`:""}
+function renderEquipment(){const s=siteById(currentSiteId),eq=equipmentById(s,currentEquipmentId);if(!eq)return;equipmentTitle.textContent=`${eq.unitNumber} · ${eq.makeModel}`;equipmentSubtitle.textContent=`${s.name} · ${eq.status}`;hoursInput.value=Number(eq.currentHours||0);equipmentStatusBanner.innerHTML=`<div class="status-banner ${equipmentHealth(eq).kind}">${equipmentHealth(eq).label}</div>`;const details=[["Equipment serial number",eq.serialNumber],["Engine serial number",eq.engineSerialNumber],["VIN",eq.vin||"N/A"],["Rental / Owned",eq.ownership],["Expected operation",`${eq.dailyHours} hrs/day`],["Engine hours",`${Number(eq.currentHours||0).toFixed(1)} h`],["Oil type",eq.oilType],["Oil capacity",eq.oilCapacity],["Oil filter",eq.oilFilter],["Fuel filter",eq.fuelFilter],["Fuel/water separator",eq.fuelWaterSeparator],["Air filter",eq.airFilter],["Hydraulic filter",eq.hydraulicFilter],["Notes",eq.notes]];equipmentDetails.innerHTML=details.map(([k,v])=>`<div class="detail"><small>${k}</small><strong>${esc(v||"—")}</strong></div>`).join("");maintenanceList.innerHTML=eq.maintenance.length?eq.maintenance.map(m=>{const st=maintState(eq,m);return`<div class="maintenance-row"><div><strong>${esc(m.name)}</strong><div class="card-sub">Every ${m.interval} h · Last ${Number(m.lastHours).toFixed(1)} h · Next ${st.dueAt.toFixed(1)} h${forecastText(s,eq,st.remaining,true)}</div></div><span class="badge ${st.kind}">${st.label}</span></div>`}).join(""):`<div class="empty">No maintenance intervals yet.</div>`;const upcoming=eq.maintenance.map(m=>({m,st:maintState(eq,m)})).filter(x=>x.st.remaining>0).sort((a,b)=>a.st.remaining-b.st.remaining)[0];forecastBox.innerHTML=upcoming?`<strong>Estimated next service</strong><br>${esc(upcoming.m.name)} · ${upcoming.st.remaining.toFixed(1)} h remaining${forecastText(s,eq,upcoming.st.remaining,true)}<br><small>Estimate uses ${eq.dailyHours} operating hrs/day${s.rotation!=="none"?` and the site's ${s.rotation} rotation`:""}. Hour meter remains authoritative.</small>`:`No future service forecast available.`;serviceHistory.innerHTML=renderHistoryRows(s,eq)}
+function renderHistoryRows(s,eq){const h=[...eq.history].sort((a,b)=>new Date(b.date)-new Date(a.date));return h.length?h.map(x=>`<div class="history-row ${x.late?"late":""}"><div><strong>${esc(x.name)}</strong><div class="card-sub">${esc(x.date)} · ${Number(x.hours).toFixed(1)} h${x.dueAt!=null?` · Due ${Number(x.dueAt).toFixed(1)} h`:""}${x.notes?" · "+esc(x.notes):""}</div></div>${x.late?`<span class="badge overdue">${Number(x.hours-x.dueAt).toFixed(1)} h late</span>`:""}</div>`).join(""):`<div class="empty">No completed service logged yet.</div>`}
+function renderMasterHistory(){historySiteFilter.innerHTML=`<option value="">All sites</option>`+activeSites().map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join("");const render=()=>{const f=historySiteFilter.value,rows=[];activeSites().filter(s=>!f||s.id===f).forEach(s=>s.equipment.forEach(eq=>eq.history.forEach(h=>rows.push({s,eq,h}))));rows.sort((a,b)=>new Date(b.h.date)-new Date(a.h.date));masterHistory.innerHTML=rows.length?rows.map(({s,eq,h})=>`<div class="card ${h.late?"history-row late":""}"><div><div class="card-title">${esc(eq.unitNumber)} · ${esc(h.name)}</div><div class="card-sub">${esc(s.name)} · ${esc(h.date)} · ${Number(h.hours).toFixed(1)} h${h.notes?" · "+esc(h.notes):""}</div></div>${h.late?`<span class="badge overdue">Completed late</span>`:`<span class="badge ok">On time</span>`}</div>`).join(""):`<div class="empty">No service history.</div>`};historySiteFilter.onchange=render;render()}
+function renderInventory(){const s=siteById(currentSiteId);inventorySubtitle.textContent=s.name;inventoryList.innerHTML=s.inventory.length?s.inventory.map((i,idx)=>`<div class="card"><div><div class="card-title">${esc(i.part)}</div><div class="card-sub">${esc(i.type)}${i.notes?" · "+esc(i.notes):""}</div></div><div><span class="qty">${i.qty}</span> <button class="ghost" data-inv-minus="${idx}">−</button><button class="ghost" data-inv-plus="${idx}">+</button></div></div>`).join(""):`<div class="empty">No site inventory entered yet.</div>`;inventoryList.querySelectorAll("[data-inv-plus]").forEach(b=>b.onclick=()=>{s.inventory[+b.dataset.invPlus].qty++;saveState();renderInventory()});inventoryList.querySelectorAll("[data-inv-minus]").forEach(b=>b.onclick=()=>{s.inventory[+b.dataset.invMinus].qty=Math.max(0,s.inventory[+b.dataset.invMinus].qty-1);saveState();renderInventory()})}
+function equipmentItems(eq){return[["Oil Filter",eq.oilFilter,1],["Fuel Filter",eq.fuelFilter,1],["Fuel/Water Separator",eq.fuelWaterSeparator,1],["Air Filter",eq.airFilter,1],["Hydraulic Filter",eq.hydraulicFilter,1],["Oil / Fluid",eq.oilType,eq.oilCapacity||"Capacity not entered"]].filter(x=>x[1])}
+function renderPack(scope){const s=siteById(currentSiteId),eqs=scope==="equipment"?[equipmentById(s,currentEquipmentId)]:s.equipment.filter(e=>e.status!=="Archived");packTitle.textContent=scope==="equipment"?`${eqs[0].unitNumber} Pack List`:`${s.name} Pack List`;packSubtitle.textContent=scope==="equipment"?eqs[0].makeModel:"Consolidated supplies for all active equipment at this site.";const map=new Map();eqs.forEach(eq=>equipmentItems(eq).forEach(([type,part,qty])=>{const key=type+"|"+part;if(!map.has(key))map.set(key,{type,part,qty:typeof qty==="number"?0:qty,units:[]});const r=map.get(key);if(typeof qty==="number")r.qty+=qty;r.units.push(eq.unitNumber)}));const inv=s.inventory||[];packList.innerHTML=map.size?[...map.values()].map(r=>{const stock=inv.filter(i=>i.part.trim().toLowerCase()===String(r.part).trim().toLowerCase()).reduce((a,i)=>a+Number(i.qty||0),0),numeric=typeof r.qty==="number",bring=numeric?Math.max(0,r.qty-stock):null;return`<div class="pack-row"><div><strong>${esc(r.part)}</strong><div class="card-sub">${esc(r.type)} · ${esc(r.units.join(", "))}</div></div><div style="text-align:right"><div class="qty">Required: ${esc(r.qty)}</div>${numeric?`<div class="card-sub">On site: ${stock} · <span class="bring">Bring: ${bring}</span></div>`:""}</div></div>`}).join(""):`<div class="empty">Add filter numbers and oil information to equipment to generate a pack list.</div>`;packBackTarget=scope==="equipment"?"equipmentView":"siteView";showView("packView")}
+function openSiteDialog(edit=false){siteForm.reset();siteDialogTitle.textContent=edit?"Edit Job Site":"Add Job Site";const s=edit?siteById(currentSiteId):null;siteId.value=s?.id||"";siteName.value=s?.name||"";siteRotation.value=s?.rotation||"none";siteCycleStart.value=s?.cycleStart||"";siteMapsLink.value=s?.mapsLink||"";siteLat.value=s?.lat||"";siteLng.value=s?.lng||"";siteAccessNotes.value=s?.accessNotes||"";siteNotes.value=s?.notes||"";archiveSiteBtn.classList.toggle("hidden",!edit);siteDialog.showModal()}
+function openEquipmentDialog(edit=false){equipmentForm.reset();const eq=edit?equipmentById(siteById(currentSiteId),currentEquipmentId):null;equipmentDialogTitle.textContent=edit?"Edit Equipment":"Add Equipment";equipmentId.value=eq?.id||"";unitNumber.value=eq?.unitNumber||"";makeModel.value=eq?.makeModel||"";serialNumber.value=eq?.serialNumber||"";engineSerialNumber.value=eq?.engineSerialNumber||"";vin.value=eq?.vin||"N/A";equipmentStatus.value=eq?.status||"Active";ownership.value=eq?.ownership||"Owned";dailyHours.value=eq?.dailyHours||12;currentHours.value=eq?.currentHours||0;oilType.value=eq?.oilType||"";oilCapacity.value=eq?.oilCapacity||"";oilFilter.value=eq?.oilFilter||"";fuelFilter.value=eq?.fuelFilter||"";fuelWaterSeparator.value=eq?.fuelWaterSeparator||"";airFilter.value=eq?.airFilter||"";hydraulicFilter.value=eq?.hydraulicFilter||"";equipmentNotes.value=eq?.notes||"";equipmentDialog.showModal()}
+addSiteBtn.onclick=()=>openSiteDialog();editSiteBtn.onclick=()=>openSiteDialog(true);siteForm.onsubmit=e=>{e.preventDefault();const existing=siteId.value?siteById(siteId.value):null,obj={id:siteId.value||crypto.randomUUID(),name:siteName.value.trim(),rotation:siteRotation.value,cycleStart:siteCycleStart.value,mapsLink:siteMapsLink.value.trim(),lat:siteLat.value,lng:siteLng.value,accessNotes:siteAccessNotes.value.trim(),notes:siteNotes.value.trim(),equipment:existing?.equipment||[],inventory:existing?.inventory||[],archived:false};if(existing)Object.assign(existing,obj);else state.sites.push(obj);currentSiteId=obj.id;saveState();siteDialog.close();renderSite();showView("siteView")};archiveSiteBtn.onclick=()=>{if(confirm("Archive this site? Equipment and history will be preserved in the backup data.")){siteById(currentSiteId).archived=true;saveState();siteDialog.close();showView("dashboardView")}};
+addEquipmentBtn.onclick=()=>openEquipmentDialog();editEquipmentBtn.onclick=()=>openEquipmentDialog(true);equipmentForm.onsubmit=e=>{e.preventDefault();const s=siteById(currentSiteId),existing=equipmentId.value?equipmentById(s,equipmentId.value):null,obj={id:equipmentId.value||crypto.randomUUID(),unitNumber:unitNumber.value.trim(),makeModel:makeModel.value.trim(),serialNumber:serialNumber.value.trim(),engineSerialNumber:engineSerialNumber.value.trim(),vin:vin.value.trim()||"N/A",status:equipmentStatus.value,ownership:ownership.value,dailyHours:Number(dailyHours.value),currentHours:Number(currentHours.value||0),oilType:oilType.value.trim(),oilCapacity:oilCapacity.value.trim(),oilFilter:oilFilter.value.trim(),fuelFilter:fuelFilter.value.trim(),fuelWaterSeparator:fuelWaterSeparator.value.trim(),airFilter:airFilter.value.trim(),hydraulicFilter:hydraulicFilter.value.trim(),notes:equipmentNotes.value.trim(),maintenance:existing?.maintenance||[],history:existing?.history||[]};if(existing)Object.assign(existing,obj);else s.equipment.push(obj);currentEquipmentId=obj.id;saveState();equipmentDialog.close();renderEquipment();showView("equipmentView")};
+hoursForm.onsubmit=e=>{e.preventDefault();equipmentById(siteById(currentSiteId),currentEquipmentId).currentHours=Number(hoursInput.value||0);saveState()};addMaintenanceBtn.onclick=()=>{const eq=equipmentById(siteById(currentSiteId),currentEquipmentId);maintenanceForm.reset();maintenanceInterval.value=250;maintenanceLastHours.value=Number(eq.currentHours||0);maintenanceDialog.showModal()};maintenanceForm.onsubmit=e=>{e.preventDefault();const eq=equipmentById(siteById(currentSiteId),currentEquipmentId);eq.maintenance.push({id:crypto.randomUUID(),name:maintenanceName.value.trim(),interval:Number(maintenanceInterval.value),lastHours:Number(maintenanceLastHours.value)});saveState();maintenanceDialog.close()};
+logServiceBtn.onclick=()=>{const eq=equipmentById(siteById(currentSiteId),currentEquipmentId);serviceMaintenanceId.innerHTML=eq.maintenance.map(m=>`<option value="${m.id}">${esc(m.name)}</option>`).join("");if(!serviceMaintenanceId.options.length)return alert("Add a maintenance interval first.");serviceHours.value=Number(eq.currentHours||0);serviceDate.value=new Date().toISOString().slice(0,10);serviceNotes.value="";serviceDialog.showModal()};serviceForm.onsubmit=e=>{e.preventDefault();const eq=equipmentById(siteById(currentSiteId),currentEquipmentId),m=eq.maintenance.find(x=>x.id===serviceMaintenanceId.value),hours=Number(serviceHours.value),dueAt=m?Number(m.lastHours)+Number(m.interval):null;eq.history.push({id:crypto.randomUUID(),maintenanceId:m?.id,name:m?.name||"Service",hours,date:serviceDate.value,notes:serviceNotes.value.trim(),dueAt,late:dueAt!=null&&hours>dueAt});if(m)m.lastHours=hours;if(hours>Number(eq.currentHours||0))eq.currentHours=hours;saveState();serviceDialog.close()};
+document.querySelectorAll("[data-drill]").forEach(b=>b.onclick=()=>renderDrill(b.dataset.drill));masterHistoryBtn.onclick=()=>{renderMasterHistory();showView("historyView")};navigateBtn.onclick=()=>{const s=siteById(currentSiteId);if(s.mapsLink)open(s.mapsLink,"_blank")};inventoryBtn.onclick=()=>{renderInventory();showView("inventoryView")};sitePackBtn.onclick=()=>renderPack("site");equipmentPackBtn.onclick=()=>renderPack("equipment");packBack.onclick=()=>showView(packBackTarget);printPackBtn.onclick=()=>print();
+for(let i=0;i<=50;i++)inventoryQty.insertAdjacentHTML("beforeend",`<option>${i}</option>`);inventoryQty.value=1;addInventoryBtn.onclick=()=>{inventoryForm.reset();inventoryQty.value=1;inventoryDialog.showModal()};inventoryForm.onsubmit=e=>{e.preventDefault();siteById(currentSiteId).inventory.push({type:inventoryType.value,part:inventoryPart.value.trim(),qty:Number(inventoryQty.value),notes:inventoryNotes.value.trim()});saveState();inventoryDialog.close();renderInventory()};
+settingsBtn.onclick=()=>settingsDialog.showModal();themeBtn.onclick=()=>themeDialog.showModal();document.querySelectorAll("[data-theme]").forEach(b=>b.onclick=()=>{const t=b.dataset.theme;localStorage.setItem(PREF_KEY,t);if(t==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.dataset.theme=t;themeDialog.close()});const savedTheme=localStorage.getItem(PREF_KEY);if(savedTheme&&savedTheme!=="auto")document.documentElement.dataset.theme=savedTheme;
+document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>b.closest("dialog").close());document.querySelectorAll("[data-back]").forEach(b=>b.onclick=()=>{const t=b.dataset.back;if(t==="siteView")renderSite();if(t==="dashboardView")renderDashboard();showView(t)});
+exportBtn.onclick=()=>{const blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`field-pm-v2-backup-${new Date().toISOString().slice(0,10)}.json`;a.click();URL.revokeObjectURL(a.href)};importBtn.onclick=()=>importInput.click();importInput.onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!Array.isArray(d.sites))throw 0;state=migrate(d);currentSiteId=currentEquipmentId=null;saveState();settingsDialog.close();showView("dashboardView")}catch{alert("That backup file could not be imported.")}};
+function renderAll(){renderDashboard();if(currentSiteId)renderSite();if(currentSiteId&&currentEquipmentId)renderEquipment()}if("serviceWorker" in navigator&&location.protocol.startsWith("http"))navigator.serviceWorker.register("./sw.js").catch(()=>{});renderAll();
